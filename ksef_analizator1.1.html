@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KSEF FA(3) Invoice Analyzer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+            min-height: 100vh;
+            padding: 24px;
+        }
+        .container { max-width: 1280px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
+        .header-left h1 { font-size: 32px; font-weight: bold; color: #111827; display: flex; align-items: center; gap: 12px; }
+        .header-left p { color: #4b5563; margin-top: 8px; font-size: 14px; }
+        .language-toggle { display: flex; align-items: center; gap: 8px; background: white; border-radius: 8px; padding: 8px 16px; cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); border: none; font-size: 14px; font-weight: 500; transition: all 0.2s; }
+        .language-toggle:hover { background: #f9fafb; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+        .main-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 24px; margin-bottom: 24px; }
+        @media (max-width: 1024px) { .main-grid { grid-template-columns: 1fr; } }
+        .card { background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); padding: 24px; }
+        .upload-section { margin-bottom: 24px; }
+        .upload-label { display: flex; align-items: center; gap: 8px; color: #1f2937; font-weight: 600; margin-bottom: 12px; font-size: 14px; }
+        .file-input { display: block; width: 100%; font-size: 14px; color: #6b7280; }
+        .file-input::file-selector-button { margin-right: 16px; padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; transition: background 0.2s; }
+        .file-input::file-selector-button:hover { background: #1d4ed8; }
+        .invoice-info { margin-top: 24px; padding: 16px; background: linear-gradient(135deg, #eff6ff 0%, #e0e7ff 100%); border-radius: 8px; border: 1px solid #bfdbfe; }
+        .invoice-info h3 { color: #1f2937; font-weight: 600; margin-bottom: 12px; font-size: 14px; }
+        .invoice-info-item { margin-bottom: 8px; font-size: 13px; color: #374151; }
+        .invoice-info-label { font-weight: 600; color: #1f2937; display: inline-block; min-width: 80px; }
+        .filters-section { display: grid; gap: 16px; margin-bottom: 24px; }
+        .search-box { position: relative; }
+        .search-box label { display: block; color: #1f2937; font-weight: 600; margin-bottom: 8px; font-size: 14px; }
+        .search-box input { width: 100%; padding: 10px 12px 10px 36px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; transition: all 0.2s; }
+        .search-box input:focus { outline: none; border-color: transparent; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1), inset 0 0 0 2px #2563eb; }
+        .search-icon { position: absolute; left: 12px; top: 36px; color: #9ca3af; pointer-events: none; font-size: 18px; }
+        .filter-section label { display: block; color: #1f2937; font-weight: 600; margin-bottom: 8px; font-size: 14px; }
+        .filter-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+        .filter-btn { padding: 8px 16px; border: none; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 13px; transition: all 0.2s; background: #e5e7eb; color: #374151; }
+        .filter-btn.active { background: #2563eb; color: white; }
+        .filter-btn:hover { background: #d1d5db; }
+        .filter-btn.active:hover { background: #1d4ed8; }
+        .fields-container { border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; max-height: 600px; overflow-y: auto; }
+        .field-item { padding: 16px; border-bottom: 1px solid #e5e7eb; cursor: pointer; transition: all 0.2s; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+        .field-item:hover { background: #eff6ff; }
+        .field-content { flex: 1; min-width: 0; }
+        .field-tag { font-family: 'Monaco', 'Courier New', monospace; font-weight: 600; color: #2563eb; font-size: 13px; }
+        .field-name { color: #1f2937; font-size: 13px; margin-top: 4px; }
+        .field-value { color: #6b7280; font-size: 12px; margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .field-type { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+        .type-required { background: #fee2e2; color: #991b1b; }
+        .type-optional { background: #dcfce7; color: #166534; }
+        .type-conditional { background: #fef3c7; color: #92400e; }
+        .type-undefined { background: #f3f4f6; color: #4b5563; }
+        .no-data { padding: 32px; text-align: center; color: #9ca3af; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 1000; align-items: center; justify-content: center; padding: 16px; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; border-radius: 8px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; }
+        .modal-header { background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 24px; display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+        .modal-title { flex: 1; }
+        .modal-title h2 { font-size: 24px; font-weight: bold; margin-bottom: 4px; }
+        .modal-title p { color: #dbeafe; font-family: 'Monaco', 'Courier New', monospace; font-size: 13px; margin-top: 4px; }
+        .modal-close { background: none; border: none; color: white; cursor: pointer; font-size: 24px; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 4px; transition: background 0.2s; }
+        .modal-close:hover { background: rgba(255, 255, 255, 0.1); }
+        .modal-body { padding: 24px; display: grid; gap: 24px; }
+        .field-badge { display: inline-block; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+        .modal-section h3 { font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 8px; }
+        .modal-section p { color: #4b5563; font-size: 14px; line-height: 1.6; }
+        .modal-section code { background: #f3f4f6; padding: 12px; border-radius: 4px; display: block; font-family: 'Monaco', 'Courier New', monospace; font-size: 13px; word-break: break-all; color: #1f2937; margin-top: 8px; }
+        .scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 #f1f5f9; }
+        .scrollbar::-webkit-scrollbar { width: 8px; }
+        .scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-left">
+                <h1><span id="title"Analizator KSeF FA(3)</span></h1>
+                <p id="subtitle">Wizualizuj i analizuj faktury KSEF FA(3)</p>
+            </div>
+			<div class="header-right">
+            <button class="language-toggle" onclick="toggleLanguage()">
+                <span>🌐</span>
+                <span id="langBtn">PL</span>
+            </button>
+			     <div class="author-info">
+                    <div id="authorLabel">Autor:</div>
+                    <div>Sebastian Wisła</div>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-grid">
+            <div class="card">
+                <div class="upload-section">
+                    <label class="upload-label">
+                        <span id="uploadLabel">📤 Upload XML file</span>
+                    </label>
+                    <input type="file" accept=".xml" id="fileInput" class="file-input" onchange="handleFileUpload(event)">
+					<div id="fileSizeError"></div>
+                </div>
+
+                <div id="invoiceInfoContainer" style="display: none;">
+                    <div class="invoice-info">
+                        <h3 id="invoiceInfoTitle">Invoice Information</h3>
+                        <div class="invoice-info-item">
+                            <span class="invoice-info-label" id="numberLabel">Number:</span>
+                            <span id="invoiceNumber">—</span>
+                        </div>
+                        <div class="invoice-info-item">
+                            <span class="invoice-info-label" id="dateLabel">Date:</span>
+                            <span id="invoiceDate">—</span>
+                        </div>
+                        <div class="invoice-info-item">
+                            <span class="invoice-info-label" id="amountLabel">Amount:</span>
+                            <span id="invoiceAmount">—</span>
+                        </div>
+                        <div class="invoice-info-item">
+                            <span class="invoice-info-label" id="statusLabel">Status:</span>
+                            <span id="invoiceStatus">—</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="filters-section">
+                    <div class="search-box">
+                        <label id="searchLabel">Search fields...</label>
+                        <span class="search-icon">🔍</span>
+                        <input type="text" id="searchInput" placeholder="Search..." oninput="updateFilters()">
+                    </div>
+
+                    <div class="filter-section">
+                        <label id="filterLabel">Filter by type</label>
+                        <div class="filter-buttons">
+                            <button class="filter-btn active" onclick="setFilterType('all')" id="filterAll">All</button>
+                            <button class="filter-btn" onclick="setFilterType('required')" id="filterRequired">Required</button>
+                            <button class="filter-btn" onclick="setFilterType('optional')" id="filterOptional">Optional</button>
+                            <button class="filter-btn" onclick="setFilterType('conditional')" id="filterConditional">Conditional</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="fields-container scrollbar" id="fieldsContainer">
+                    <div class="no-data" id="noDataMessage">No data to display</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <h2 id="modalFieldName">Field Name</h2>
+                    <p id="modalFieldTag">TAG</p>
+                </div>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="modalTypeContainer"></div>
+                <div class="modal-section" id="modalLegalSection"></div>
+                <div class="modal-section" id="modalGuidanceSection"></div>
+                <div class="modal-section" id="modalExampleSection"></div>
+                <div class="modal-section" id="modalValueSection" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const translations = {
+            pl: {
+                title: 'Wizualizator Faktur KSEF FA(3)',
+                subtitle: 'Wizualizuj i analizuj faktury KSEF FA(3)',
+                uploadLabel: '📤 Wgraj plik XML',
+                searchLabel: 'Szukaj pól...',
+                filterLabel: 'Filtruj po typie',
+                all: 'Wszystkie',
+                required: 'Obligatoryjne',
+                optional: 'Opcjonalne',
+                conditional: 'Fakultatywne',
+                invoiceInfo: 'Informacje o fakturze',
+                number: 'Numer',
+                date: 'Data',
+                amount: 'Kwota',
+                status: 'Status',
+                fieldName: 'Nazwa pola KSEF',
+                legalBasis: 'Podstawa prawna',
+                guidance: 'Wskazówki praktyczne',
+                example: 'Przykład',
+                noData: 'Brak danych do wyświetlenia',
+                summary: 'Wartość w pliku',
+				author: 'Autor:'
+            },
+            en: {
+                title: 'KSeF Analyzer FA(3)',
+                subtitle: 'Visualize and analyze KSEF FA(3) invoices',
+                uploadLabel: '📤 Upload XML file',
+                searchLabel: 'Search fields...',
+                filterLabel: 'Filter by type',
+                all: 'All',
+                required: 'Required',
+                optional: 'Optional',
+                conditional: 'Conditional',
+                invoiceInfo: 'Invoice Information',
+                number: 'Number',
+                date: 'Date',
+                amount: 'Amount',
+                status: 'Status',
+                fieldName: 'KSEF Field Name',
+                legalBasis: 'Legal Basis',
+                guidance: 'Practical Guidance',
+                example: 'Example',
+                noData: 'No data to display',
+                summary: 'Value in file',
+				author: 'Author:'
+            }
+        };
+
+        const fieldDefinitions = {
+            'KodFormularza': {
+                name_pl: 'Kod formularza',
+                name_en: 'Form Code',
+                type: 'required',
+                legal_pl: 'Art. 106e ust. 1 pkt 32a ustawy o podatku od towarów i usług - element FA(3)',
+                legal_en: 'Art. 106e para. 1 point 32a of the VAT Act - FA(3) element',
+                guidance_pl: 'Zawiera dwa atrybuty: kodSystemowy=FA i wersjaSchematy=1-0E. Identyfikuje strukturę jako FA(3). Pole obligatoryjne dla każdej faktury ustrukturyzowanej od 1 lutego 2026 r.',
+                guidance_en: 'Contains two attributes: kodSystemowy=FA and wersjaSchematy=1-0E. Identifies the structure as FA(3). Mandatory field for each structured invoice from February 1, 2026.',
+                example: 'FA (atrybuty: kodSystemowy="FA", wersjaSchemy="1-0E")'
+            },
+            'WariantFormularza': {
+                name_pl: 'Wariant formularza',
+                name_en: 'Form Variant',
+                type: 'required',
+                legal_pl: 'Rozporządzenie w sprawie struktury logicznej FA(3)',
+                legal_en: 'Regulation on the logical structure of FA(3)',
+                guidance_pl: 'Wartość: "3". Oznacza trzeci wariant schematu (FA(3)). Obligatoryjne dla odróżnienia od wcześniejszych wersji FA(1) i FA(2).',
+                guidance_en: 'Value: "3". Indicates the third variant of the schema (FA(3)). Mandatory to distinguish from earlier FA(1) and FA(2) versions.',
+                example: '3'
+            },
+            'DataWytworzeniaFa': {
+                name_pl: 'Data i czas wytworzenia faktury',
+                name_en: 'Invoice Creation Date and Time',
+                type: 'required',
+                legal_pl: 'Art. 106e ust. 1 pkt 1 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 1 of the VAT Act',
+                guidance_pl: 'Data i godzina wytworzenia pliku XML. Format obowiązkowy: RRRR-MM-DDTGG:MM:SSZ (np. 2026-02-01T09:30:47Z). Litera T oznacza czas, Z oznacza UTC. WAŻNE: Może różnić się od P_1 (daty wystawienia) i daty przesłania do KSeF.',
+                guidance_en: 'Date and time of XML file creation. Mandatory format: YYYY-MM-DDTHH:MM:SSZ (e.g., 2026-02-01T09:30:47Z). T indicates time, Z indicates UTC. IMPORTANT: May differ from P_1 (issue date) and KSeF submission date.',
+                example: '2026-02-01T09:30:47Z'
+            },
+            'SystemInfo': {
+                name_pl: 'Informacja o systemie teleinformatycznym',
+                name_en: 'IT System Information',
+                type: 'optional',
+                legal_pl: 'Art. 106e ust. 1 pkt 32b ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 32b of the VAT Act',
+                guidance_pl: 'Nazwa systemu, z którego korzysta podatnik do wystawienia faktury. Pole fakultatywne. Może zawierać nazwę programu księgowego, np. "Sage", "SAP", "Enova", czy "Aplikacja Podatnika KSeF".',
+                guidance_en: 'Name of the system used by the taxpayer to issue the invoice. Optional field. Can contain the name of accounting software, e.g., "Sage", "SAP", "Enova", or "KSeF Taxpayer Application".',
+                example: 'Aplikacja Podatnika KSeF'
+            },
+            'NIP': {
+                name_pl: 'Numer Identyfikacji Podatkowej',
+                name_en: 'Tax Identification Number',
+                type: 'required',
+                legal_pl: 'Art. 106e ust. 1 pkt 20 i 21 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 points 20 and 21 of the VAT Act',
+                guidance_pl: '10-cyfrowy numer NIP przypisany przez fiskus polski. WAŻNE: Dla Podmiot1 (sprzedawcy) - obligatoryjne, bez niego nie można autoryzować się w KSeF. Dla nabywcy polskiego (Podmiot2) powinien być w polu NIP, nie w polach NrVatUE ani NrID. Wymagane zarówno dla sprzedawcy jak i nabywcy.',
+                guidance_en: '10-digit NIP assigned by Polish tax authorities. IMPORTANT: For Podmiot1 (seller) - mandatory, cannot authorize in KSeF without it. For Polish buyer (Podmiot2) should be in NIP field, not in NrVatUE or NrID. Required for both seller and buyer.',
+                example: '9999999999'
+            },
+            'Nazwa': {
+                name_pl: 'Nazwa podmiotu',
+                name_en: 'Entity Name',
+                type: 'required',
+                legal_pl: 'Art. 106e ust. 1 pkt 20 i 21 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 points 20 and 21 of the VAT Act',
+                guidance_pl: 'Pełna, zarejestrowana nazwa firmy. Maksimum 512 znaków. Może zawierać również nazwę handlową. Przykład: "ABC AGD sp. z o.o., Sklep Motoryzacyjny XYZ". Wymagane dla Podmiot1, Podmiot2 i Podmiot3.',
+                guidance_en: 'Full registered company name. Maximum 512 characters. Can also include trade names. Example: "ABC AGD sp. z o.o., Auto Shop XYZ". Required for Podmiot1, Podmiot2 and Podmiot3.',
+                example: 'ABC AGD sp. z o.o.'
+            },
+            'Adres': {
+                name_pl: 'Adres podmiotu',
+                name_en: 'Entity Address',
+                type: 'required',
+                legal_pl: 'Art. 106e ust. 1 pkt 20 i 21 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 points 20 and 21 of the VAT Act',
+                guidance_pl: 'Adres siedziby podmiotu. Zawiera KodKraju, AdresL1 (obowiązkowe) i AdresL2 (fakultatywne). Maksimum 512 znaków na linię. Przykład: AdresL1="ul. Błękitna 14, 11-111 Warszawa". Adres możliwy do podzielenia na dwie linie dla lepszej czytelności.',
+                guidance_en: 'Address of the entity\'s registered office. Contains KodKraju, AdresL1 (mandatory) and AdresL2 (optional). Maximum 512 characters per line. Example: AdresL1="ul. Błękitna 14, 11-111 Warszawa". Address can be split into two lines for clarity.',
+                example: 'ul. Błękitna 14, 11-111 Warszawa'
+            },
+            'P_1': {
+                name_pl: 'Data wystawienia faktury',
+                name_en: 'Invoice Issue Date',
+                type: 'required',
+                legal_pl: 'Art. 106e ust. 1 pkt 1 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 1 of the VAT Act',
+                guidance_pl: 'Data wystawienia faktury, zgodna z art. 106na ust. 1. Format obowiązkowy: RRRR-MM-DD (np. 2026-02-15). Dla faktur "online" - faktura uznawana za wystawioną w dniu przesłania do KSeF. Dla faktur "offline" - data z pola P_1 jest datą formalną. WAŻNE dla weryfikacji terminowości wystawienia.',
+                guidance_en: 'Invoice issue date in accordance with Art. 106na para. 1. Mandatory format: YYYY-MM-DD (e.g., 2026-02-15). For "online" invoices - considered issued on KSeF submission date. For "offline" invoices - P_1 date is formal. IMPORTANT for verifying timeliness.',
+                example: '2026-02-15'
+            },
+            'P_1M': {
+                name_pl: 'Miejsce wystawienia faktury',
+                name_en: 'Place of Issue',
+                type: 'optional',
+                legal_pl: 'Art. 106e ust. 1 pkt 1 (fakultatywnie) ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 1 (optional) of the VAT Act',
+                guidance_pl: 'Miejsce wystawienia faktury. Pole fakultatywne. Np. "Warszawa", "Kraków-biuro". Nie jest wymagane dla faktury ustrukturyzowanej.',
+                guidance_en: 'Place where invoice was issued. Optional field. E.g. "Warsaw", "Krakow-office". Not required for structured invoice.',
+                example: 'Warszawa'
+            },
+            'P_2': {
+                name_pl: 'Numer faktury',
+                name_en: 'Invoice Number',
+                type: 'required',
+                legal_pl: 'Art. 106e ust. 1 pkt 2 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 2 of the VAT Act',
+                guidance_pl: 'Unikalny numer nadany przez sprzedawcę w ramach jednej lub więcej serii. Identyfikuje fakturę jednoznacznie wśród faktur tego sprzedawcy. Nie należy go mylić z numerem KSeF przypisanym automatycznie przez system. Format pozostaje do decyzji podatnika, np. "FV/110/07/2026", "2026-001", "ABC-2026-0150".',
+                guidance_en: 'Unique number assigned by the seller within one or more series. Uniquely identifies the invoice among the seller\'s invoices. Should not be confused with KSeF number assigned by system. Format is at taxpayer\'s discretion, e.g., "FV/110/07/2026", "2026-001", "ABC-2026-0150".',
+                example: 'FV/110/07/2026'
+            },
+            'WZ': {
+                name_pl: 'Numer dokumentu magazynowego WZ',
+                name_en: 'Warehouse Document Number',
+                type: 'optional',
+                legal_pl: 'Art. 106e ust. 1 (fakultatywnie) ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 (optional) of the VAT Act',
+                guidance_pl: 'Numer dokumentu WZ (wydanie na zewnątrz) związanego z fakturą. Maksimum 1000 wystąpień. Pole fakultatywne. Służy do połączenia faktury z dokumentem magazynowym.',
+                guidance_en: 'Number of warehouse document (WZ - release outside) related to the invoice. Maximum 1000 occurrences. Optional field. Links invoice to warehouse document.',
+                example: 'WZ/2026/001'
+            },
+            'P_6': {
+                name_pl: 'Data dokonania lub zakończenia dostawy/usługi',
+                name_en: 'Service/Delivery Date',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 1 pkt 4, Art. 118, Art. 19a, Art. 21 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 4, Art. 118, Art. 19a, Art. 21 of the VAT Act',
+                guidance_pl: 'Data faktycznego wykonania usługi lub dostawy towaru, jeśli różni się od daty wystawienia (P_1). Format: RRRR-MM-DD. Wypełnia się gdy dla wszystkich pozycji data jest wspólna. Jeśli różne daty dla różnych pozycji – użyj pola P_6A w każdej pozycji (element FaWiersz). WAŻNE: Decyduje o momencie powstania obowiązku VAT.',
+                guidance_en: 'Date of actual service performance or goods delivery, if different from issue date (P_1). Format: YYYY-MM-DD. Filled in when all items share same date. If different dates for items - use P_6A field in each row.',
+                example: '2026-01-27'
+            },
+            'P_6A': {
+                name_pl: 'Data dostawy dla poszczególnych pozycji',
+                name_en: 'Per-Line Item Delivery Date',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 1 pkt 4 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 4 of the VAT Act',
+                guidance_pl: 'Wypełnia się w elemencie FaWiersz, gdy dla poszczególnych pozycji faktury występują różne daty dostawy. Format: RRRR-MM-DD. Pole opcjonalne (fakultatywne), ale obligatoryjne w wymienionych przypadkach. Jeśli wszystkie pozycje mają tę samą datę – używaj P_6.',
+                guidance_en: 'Filled in FaWiersz element when different line items have different delivery dates. Format: YYYY-MM-DD. Optional field but mandatory in specified cases.',
+                example: '2026-09-12'
+            },
+            'OkresFa': {
+                name_pl: 'Okres, którego dotyczy faktura',
+                name_en: 'Invoice Period',
+                type: 'conditional',
+                legal_pl: 'Art. 19a ust. 3, Art. 19a ust. 4, Art. 19a ust. 5 pkt 4 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 19a para. 3, Art. 19a para. 4, Art. 19a para. 5 point 4 of the VAT Act',
+                guidance_pl: 'Element zawierający początek (P_6_Od) i koniec (P_6_Do) okresu, którego dotyczy faktura. Format daty: RRRR-MM-DD. Wymagane dla faktur dotyczących usług świadczonych w określonym okresie lub dostaw towaru w transzach. Przykład: faktura za czynsz za styczeń 2026: P_6_Od=2026-01-01, P_6_Do=2026-01-31.',
+                guidance_en: 'Element containing start (P_6_Od) and end (P_6_Do) of the invoice period. Date format: YYYY-MM-DD. Required for invoices covering services in a specific period or periodic deliveries.',
+                example: 'P_6_Od: 2026-01-01, P_6_Do: 2026-01-31'
+            },
+            'P_7': {
+                name_pl: 'Nazwa (rodzaj) towaru lub usługi',
+                name_en: 'Description of Goods or Services',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 1 pkt 5 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 5 of the VAT Act',
+                guidance_pl: 'Dokładny opis towaru lub usługi. Maksimum 512 znaków. Powinien być zrozumiały dla nabywcy. Nie jest wymagane dla: faktury korygującej dotyczącej wszystkich dostaw w danym okresie (art. 106j ust. 3 pkt 2), faktury uproszczonej do 450 zł. Przykład: "Koc polarowy", "Usługa tłumaczeniowa – angielski na polski".',
+                guidance_en: 'Detailed description of goods or services. Maximum 512 characters. Should be clear to the buyer. Not required for: corrective invoices covering all deliveries in period, simplified invoices up to 450 PLN.',
+                example: 'Koc polarowy'
+            },
+            'Indeks': {
+                name_pl: 'Wewnętrzny kod towaru',
+                name_en: 'Internal Product Code',
+                type: 'optional',
+                legal_pl: 'Art. 106e ust. 1 pkt 5 (fakultatywnie) ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 5 (optional) of the VAT Act',
+                guidance_pl: 'Wewnętrzny kod lub numer katalogowy towaru/usługi nadany przez sprzedawcę. Maksimum 50 znaków. Pole fakultatywne. Pomaga w identyfikacji towaru w systemie sprzedawcy. Przykład: "SKU-2026-001", "PROD-ABC-123".',
+                guidance_en: 'Internal code or catalog number of goods/services assigned by seller. Maximum 50 characters. Optional field. Helps identify goods in seller\'s system.',
+                example: 'SKU-2026-001'
+            },
+            'GTIN': {
+                name_pl: 'Globalny Numer Jednostki Handlowej',
+                name_en: 'GTIN - Global Trade Item Number',
+                type: 'optional',
+                legal_pl: 'Art. 106e ust. 1 pkt 5 (fakultatywnie) ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 5 (optional) of the VAT Act',
+                guidance_pl: 'Cyfrowy kod GTIN (znany jako kod EAN) umożliwiający identyfikację towaru na całym świecie. Maksimum 20 znaków. Pole fakultatywne. Pozwala na standaryzowaną identyfikację produktów. Przykład: "5901234123457".',
+                guidance_en: 'Numeric GTIN code (known as EAN code) enabling global product identification. Maximum 20 characters. Optional field. Enables standardized product identification.',
+                example: '5901234123457'
+            },
+            'PKWiU': {
+                name_pl: 'Polska Klasyfikacja Wyrobów i Usług',
+                name_en: 'Polish Product and Services Classification',
+                type: 'optional',
+                legal_pl: 'Art. 106e ust. 1 pkt 5 (fakultatywnie) ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 5 (optional) of the VAT Act',
+                guidance_pl: 'Symbol PKWiU 2015 (Polska Klasyfikacja Wyrobów i Usług). Maksimum 50 znaków. Pole fakultatywne. Umożliwia klasyfikację produktów zgodnie z polskim standardem. Stosowana na potrzeby podatku VAT. Przykład: "62.02.1" (doradztwo prawne), "49.4" (transport drogowy).',
+                guidance_en: 'PKWiU 2015 code (Polish Classification of Products and Services). Maximum 50 characters. Optional field. Enables product classification per Polish standard.',
+                example: '62.02.1'
+            },
+            'CN': {
+                name_pl: 'Nomenklatura Scalonona',
+                name_en: 'Combined Nomenclature',
+                type: 'optional',
+                legal_pl: 'Art. 106e ust. 1 pkt 5 (fakultatywnie) ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 5 (optional) of the VAT Act',
+                guidance_pl: 'Symbol Nomenklatury Scalonej (CN) - unijny system klasyfikacji towarów. Maksimum 50 znaków. Pole fakultatywne. Szczególnie istotne dla handlu międzynarodowego. Przykład: "2203" (pivo), "8701" (pojazdy silnikowe).',
+                guidance_en: 'Combined Nomenclature (CN) code - EU system for goods classification. Maximum 50 characters. Optional field. Especially important for international trade.',
+                example: '2203'
+            },
+            'P_8A': {
+                name_pl: 'Jednostka miary',
+                name_en: 'Unit of Measure',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 1 pkt 6 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 6 of the VAT Act',
+                guidance_pl: 'Jednostka, w jakiej mierzy się dostarczane towary lub wykonywane usługi. Maksimum 50 znaków. Nie jest wymagane dla faktury uproszczonej do 450 zł. Standardowe jednostki: szt. (sztuka), kg (kilogram), m (metr), h (godzina), m2 (metr kwadratowy).',
+                guidance_en: 'Unit in which goods are measured or services are provided. Maximum 50 characters. Not required for simplified invoices up to 450 PLN. Standard units: pcs, kg, m, h, m2.',
+                example: 'szt.'
+            },
+            'P_8B': {
+                name_pl: 'Ilość (liczba) dostarczonych towarów',
+                name_en: 'Quantity',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 1 pkt 6 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 6 of the VAT Act',
+                guidance_pl: 'Liczba dostarczonych jednostek towaru lub ilość wykonanych usług. Dokładność do 6 miejsc po przecinku. Separator dziesiętny: kropka (.). Nie jest wymagane dla faktury uproszczonej do 450 zł. Liczby ujemne poprzedza się minusem (zwroty towarów).',
+                guidance_en: 'Number of delivered units or quantity of services provided. Precision up to 6 decimal places. Decimal separator: period (.). Not required for simplified invoices up to 450 PLN.',
+                example: '3.5'
+            },
+            'P_9A': {
+                name_pl: 'Cena jednostkowa netto',
+                name_en: 'Unit Price Net',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 1 pkt 7, Art. 106e ust. 7 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 7, Art. 106e para. 7 of the VAT Act',
+                guidance_pl: 'Cena jednostkowa towaru lub usługi bez podatku VAT. Dokładność do 8 miejsc po przecinku. Separator dziesiętny: kropka. Nie jest wymagane dla procedury marży, dostaw używanych środków transportu, dzieł sztuki ani faktury uproszczonej do 450 zł. Alternatywa: P_9B (cena brutto).',
+                guidance_en: 'Unit price of goods or services without VAT. Precision up to 8 decimal places. Decimal separator: period. Not required for margin scheme, used transport, artwork, or simplified invoices up to 450 PLN.',
+                example: '90.12345678'
+            },
+            'P_9B': {
+                name_pl: 'Cena jednostkowa brutto',
+                name_en: 'Unit Price Gross',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 7 i ust. 8 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 7 and para. 8 of the VAT Act',
+                guidance_pl: 'Cena jednostkowa z podatkiem VAT. Stosuje się, gdy podatnik oblicza podatek wg wzoru: KP = WB x SP/(100+SP). Dokładność do 8 miejsc po przecinku. Zamiast P_9A w takim przypadku. Wymaga wówczas również podania P_11A zamiast P_11.',
+                guidance_en: 'Unit price including VAT. Used when taxpayer calculates tax per formula: KP = WB x SP/(100+SP). Precision up to 8 decimal places. Used instead of P_9A in such case.',
+                example: '110.99999999'
+            },
+            'P_10': {
+                name_pl: 'Rabaty i opusty',
+                name_en: 'Discounts',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 1 pkt 8 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 8 of the VAT Act',
+                guidance_pl: 'Kwoty rabatów, opustów i obniżek cen, jeśli nie zostały uwzględnione w cenie jednostkowej. Dokładność do 8 miejsc po przecinku. Nie jest wymagane dla procedury marży ani faktury uproszczonej. W fakturach korygujących pokazuje się różnicę. Liczby ujemne poprzedza się minusem.',
+                guidance_en: 'Amounts of discounts and price reductions if not included in unit price. Precision up to 8 decimal places. Not required for margin scheme or simplified invoices.',
+                example: '5.50000000'
+            },
+            'P_11': {
+                name_pl: 'Wartość sprzedaży netto',
+                name_en: 'Net Sales Value',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 1 pkt 9 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 9 of the VAT Act',
+                guidance_pl: 'Wartość dostarczonych towarów lub wykonanych usług bez podatku VAT (netto). To jest kluczowe pole dla obliczania podstawy opodatkowania. Dokładność do 2 miejsc po przecinku. Nie jest wymagane dla procedury marży ani faktury uproszczonej do 450 zł. Obliczanie: (P_8B × P_9A) - P_10 = P_11.',
+                guidance_en: 'Value of delivered goods or services without VAT (net). Critical field for calculating tax base. Precision to 2 decimal places. Not required for margin scheme or simplified invoices up to 450 PLN.',
+                example: '270.00'
+            },
+            'P_12': {
+                name_pl: 'Stawka podatku VAT',
+                name_en: 'VAT Tax Rate',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 1 pkt 11 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 11 of the VAT Act',
+                guidance_pl: 'Stawka podatku dla danej pozycji. Dopuszczalne wartości: "23" (główna), "22" (zmieniona główna), "8" (obniżona), "7" (zmieniona obniżona), "5", "4", "3" (obniżone), "0 KR" (0% krajowe), "0 WDT" (0% WDT), "0 EX" (0% eksport), "zw" (zwolnienie), "oo" (odwrotne obciążenie krajowe), "np I" (niepodlegające - poza UE), "np II" (niepodlegające - usługi art. 100). Nie jest wymagane dla procedury marży, zwolnień ani faktury uproszczonej do 450 zł.',
+                guidance_en: 'Tax rate for given line item. Allowed values: "23" (standard), "22" (former standard), "8" (reduced), "7" (former reduced), "5", "4", "3" (reduced), "0 KR" (0% domestic), "0 WDT" (0% intra-EU), "0 EX" (0% export), "zw" (exemption), "oo" (reverse charge), "np I", "np II".',
+                example: '23'
+            },
+            'P_13_1': {
+                name_pl: 'Podstawa opodatkowania - stawka 23%',
+                name_en: 'Taxable Base - 23% rate',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 1 pkt 12 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 12 of the VAT Act',
+                guidance_pl: 'Suma netto wszystkich pozycji opodatkowanych stawką 23% (lub aktualnie obowiązującą podstawową - 22%). Na poziomie faktury (nie pozycji). W fakturach zaliczkowych - wartość zaliczki. W fakturach korygujących - pokazuje się różnicę. Dokładność do 2 miejsc po przecinku. Wypełnia się sekwencję: P_13_1, P_14_1, P_14_1W (gdy waluta obca).',
+                guidance_en: 'Sum of net amounts taxed at 23% (or current standard rate - 22%). At invoice level (not line item). For advance invoices - advance amount. For corrective invoices - shows difference.',
+                example: '1666.66'
+            },
+            'P_14_1': {
+                name_pl: 'Podatek VAT - stawka 23%',
+                name_en: 'VAT Tax - 23% rate',
+                type: 'conditional',
+                legal_pl: 'Art. 106e ust. 1 pkt 12 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 12 of the VAT Act',
+                guidance_pl: 'Obliczona kwota podatku VAT dla stawki 23%. Dokładność do 2 miejsc po przecinku. W fakturach zaliczkowych oblicza się według specjalnego wzoru (art. 106f ust. 1 pkt 3). W fakturach korygujących pokazuje się różnicę. WAŻNE: Łączna suma wszystkich P_14_X powinna równać się podatkowi całkowemu (lub bardzo blisko w zależności od zaokrągleń).',
+                guidance_en: 'Calculated VAT amount for 23% rate. Precision to 2 decimal places. For advance invoices calculated per special formula (Art. 106f para. 1 point 3). For corrective invoices, shows difference.',
+                example: '383.33'
+            },
+            'P_15': {
+                name_pl: 'Wartość całkowita faktury',
+                name_en: 'Total Invoice Amount',
+                type: 'required',
+                legal_pl: 'Art. 106e ust. 1 pkt 16 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 16 of the VAT Act',
+                guidance_pl: 'Suma brutto wszystkich pozycji faktury. Dokładność do 2 miejsc po przecinku. W fakturach zaliczkowych - kwota dokumentowana zaliczką. W fakturach rozliczających (art. 106f ust. 3) - kwota pozostała do zapłaty. W fakturach korygujących - korekta do kwoty (różnica). WAŻNE: To pole decyduje o kwocie wymagającej zapłaty lub rozliczenia.',
+                guidance_en: 'Gross sum of all invoice items. Precision to 2 decimal places. For advance invoices - advance amount. For settlement invoices - remaining amount. For corrective invoices - difference.',
+                example: '2051.00'
+            },
+            'RodzajFaktury': {
+                name_pl: 'Rodzaj faktury',
+                name_en: 'Invoice Type',
+                type: 'required',
+                legal_pl: 'Art. 106e ust. 1 pkt 32c ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 32c of the VAT Act',
+                guidance_pl: 'Oznaczenie rodzaju faktury. Dopuszczalne wartości: "VAT" (faktura podstawowa), "KOR" (korygująca), "ZAL" (zaliczkowa), "ROZ" (rozliczająca), "UPR" (uproszczona), "KOR_ZAL" (korygująca zaliczkową), "KOR_ROZ" (korygująca rozliczającą). WAŻNE: Od 1 lutego 2026 do korekty faktury uproszczonej stosuje się "KOR", a nie "UPR_KOR".',
+                guidance_en: 'Invoice type designation. Allowed values: "VAT" (standard), "KOR" (corrective), "ZAL" (advance), "ROZ" (settlement), "UPR" (simplified), "KOR_ZAL" (corrective to advance), "KOR_ROZ" (corrective to settlement).',
+                example: 'VAT'
+            },
+            'Zaplacono': {
+                name_pl: 'Informacja o wpłacie',
+                name_en: 'Payment Information',
+                type: 'optional',
+                legal_pl: 'Art. 106e ust. 1 pkt 14 ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 14 of the VAT Act',
+                guidance_pl: 'Znacznik wskazujący, czy faktura została opłacona. Dopuszczalne wartości: "1" (opłacono w całości do daty wystawienia), "2" (opłacono częściowo - gdy otrzymano części płatności). Pole fakultatywne, służy informacyjnie dla odbiorcy. Nie wpływa na obliczenie podatku VAT, jedynie dokumentuje status płatności.',
+                guidance_en: 'Indicator showing whether invoice was paid. Allowed values: "1" (fully paid by issue date), "2" (partially paid - if partial payments received). Optional field for information only.',
+                example: '1'
+            },
+            'FormaPlatnosci': {
+                name_pl: 'Forma płatności',
+                name_en: 'Payment Method',
+                type: 'optional',
+                legal_pl: 'Art. 106e ust. 1 pkt 14 (fakultatywnie) ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 14 (optional) of the VAT Act',
+                guidance_pl: 'Forma, w jakiej dokonano lub ma być dokonana płatność. Dopuszczalne wartości: "1" (gotówka), "2" (karta), "3" (bon), "4" (czek), "5" (kredyt), "6" (przelew), "7" (płatność mobilna). Pole fakultatywne. Może dotyczyć zarówno płatności już dokonanej jak i przyszłej. Informacja pomocna dla nabywcy i dla analiz statystycznych.',
+                guidance_en: 'Form of payment completed or to be completed. Allowed values: "1" (cash), "2" (card), "3" (voucher), "4" (check), "5" (credit), "6" (transfer), "7" (mobile payment). Optional field.',
+                example: '6'
+            },
+            'LinkDoPlatnosci': {
+                name_pl: 'Link do płatności',
+                name_en: 'Payment Link',
+                type: 'optional',
+                legal_pl: 'Art. 106e ust. 1 pkt 14 (fakultatywnie) ustawy o podatku od towarów i usług',
+                legal_en: 'Art. 106e para. 1 point 14 (optional) of the VAT Act',
+                guidance_pl: 'Link umożliwiający bezgotówkową płatność faktury. Maksimum 512 znaków. Pole fakultatywne. Powinno zawierać URL lub URI do bramki płatniczej. Przykład: "https://agent.pl/bramka?IPKSeF=001ABC123DEF4". Znacznie ułatwia płatność dla nabywcy.',
+                guidance_en: 'Link enabling cashless invoice payment. Maximum 512 characters. Optional field. Should contain URL to payment gateway. Significantly facilitates payment for buyer.',
+                example: 'https://agent.pl/bramka?IPKSeF=001ABC123DEF4'
+            },
+			
+        };
+
+        let currentLanguage = localStorage.getItem('ksef-lang') || 'pl';
+        let currentFilterType = 'all';
+        let invoiceData = null;
+        let allFields = [];
+
+        function t(key) {
+            return translations[currentLanguage]?.[key] || key;
+        }
+
+        function updateUI() {
+            document.getElementById('title').textContent = t('title');
+            document.getElementById('subtitle').textContent = t('subtitle');
+            document.getElementById('uploadLabel').textContent = t('uploadLabel');
+            document.getElementById('searchLabel').textContent = t('searchLabel');
+            document.getElementById('filterLabel').textContent = t('filterLabel');
+            document.getElementById('noDataMessage').textContent = t('noData');
+            document.getElementById('invoiceInfoTitle').textContent = t('invoiceInfo');
+            document.getElementById('numberLabel').textContent = t('number') + ':';
+            document.getElementById('dateLabel').textContent = t('date') + ':';
+            document.getElementById('amountLabel').textContent = t('amount') + ':';
+            document.getElementById('statusLabel').textContent = t('status') + ':';
+            document.getElementById('filterAll').textContent = t('all');
+            document.getElementById('filterRequired').textContent = t('required');
+            document.getElementById('filterOptional').textContent = t('optional');
+            document.getElementById('filterConditional').textContent = t('conditional');
+            document.getElementById('langBtn').textContent = currentLanguage.toUpperCase();
+        }
+
+        function toggleLanguage() {
+            currentLanguage = currentLanguage === 'pl' ? 'en' : 'pl';
+            localStorage.setItem('ksef-lang', currentLanguage);
+            updateUI();
+            if (invoiceData) {
+                renderFields();
+            }
+        }
+
+        function handleFileUpload(e) {
+            const file = e.target.files?.[0];
+			const errorDiv = document.getElementById('fileSizeError');
+            errorDiv.textContent = ''; // Czyści poprzedni komunikat
+            if (!file) return;
+				if (file && file.size > 3 * 1024 * 1024) { // 3MB w bajtach
+					errorDiv.textContent = 'Plik jest za duży! Maksymalny rozmiar to 3MB.';
+					event.target.value = ''; // Czyści wybrany plik
+                return;
+				}
+			
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const xmlText = event.target?.result;
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+
+                    if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
+                        alert('Error parsing XML file');
+                        return;
+                    }
+
+                    invoiceData = { xmlDoc };
+                    extractAndDisplayData();
+                    renderFields();
+                } catch (err) {
+                    console.error(err);
+                    alert('Error loading file');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function extractAndDisplayData() {
+            if (!invoiceData?.xmlDoc) return;
+
+            const extractValue = (tagName) => {
+                const element = invoiceData.xmlDoc.getElementsByTagName(tagName)[0];
+                return element?.textContent || '—';
+            };
+
+            document.getElementById('invoiceNumber').textContent = extractValue('P_2');
+            document.getElementById('invoiceDate').textContent = extractValue('P_1');
+            document.getElementById('invoiceAmount').textContent = extractValue('P_15');
+            document.getElementById('invoiceStatus').textContent = extractValue('RodzajFaktury');
+            document.getElementById('invoiceInfoContainer').style.display = 'block';
+        }
+
+        function extractAllFields() {
+            if (!invoiceData?.xmlDoc) return [];
+
+            const fields = [];
+            const walker = invoiceData.xmlDoc.createTreeWalker(
+                invoiceData.xmlDoc.documentElement,
+                NodeFilter.SHOW_ELEMENT,
+                null
+            );
+
+            const seenTags = new Set();
+            let node;
+            while (node = walker.nextNode()) {
+                if (!seenTags.has(node.tagName) && node.textContent.trim()) {
+                    seenTags.add(node.tagName);
+                    fields.push({
+                        tag: node.tagName,
+                        value: node.textContent.trim(),
+                        definition: fieldDefinitions[node.tagName] || null,
+                    });
+                }
+            }
+
+            return fields.sort((a, b) => a.tag.localeCompare(b.tag));
+        }
+
+        function updateFilters() {
+            renderFields();
+        }
+
+        function setFilterType(type) {
+            currentFilterType = type;
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            renderFields();
+        }
+
+        function renderFields() {
+            allFields = extractAllFields();
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+            let filtered = allFields.filter(f => {
+                const matchesSearch = !searchTerm || 
+                    f.tag.toLowerCase().includes(searchTerm) ||
+                    (f.definition && f.definition[`name_${currentLanguage}`]?.toLowerCase().includes(searchTerm));
+
+                const matchesFilter = currentFilterType === 'all' || 
+                    (f.definition && f.definition.type === currentFilterType);
+
+                return matchesSearch && matchesFilter;
+            });
+
+            const container = document.getElementById('fieldsContainer');
+            if (filtered.length === 0) {
+                container.innerHTML = `<div class="no-data">${t('noData')}</div>`;
+                return;
+            }
+
+            container.innerHTML = filtered.map(f => {
+                const def = f.definition;
+                const typeClass = def ? `type-${def.type}` : 'type-undefined';
+                const typeName = def ? t(def.type) : 'Undefined';
+
+                return `
+                    <div class="field-item" onclick="openModal('${f.tag}')">
+                        <div class="field-content">
+                            <div class="field-tag">${f.tag}</div>
+                            ${def ? `<div class="field-name">${def[`name_${currentLanguage}`]}</div>` : ''}
+                            <div class="field-value">${f.value.substring(0, 80)}</div>
+                        </div>
+                        <div class="field-type ${typeClass}">${typeName}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function openModal(tag) {
+            const field = allFields.find(f => f.tag === tag);
+            if (!field?.definition) return;
+
+            const def = field.definition;
+            const modal = document.getElementById('modal');
+
+            document.getElementById('modalFieldName').textContent = def[`name_${currentLanguage}`];
+            document.getElementById('modalFieldTag').textContent = tag;
+
+            const typeClass = `type-${def.type}`;
+            document.getElementById('modalTypeContainer').innerHTML = 
+                `<div class="field-badge ${typeClass}">${t(def.type)}</div>`;
+
+            document.getElementById('modalLegalSection').innerHTML = `
+                <h3>${t('legalBasis')}</h3>
+                <p class="modal-italic">${def[`legal_${currentLanguage}`]}</p>
+            `;
+
+            document.getElementById('modalGuidanceSection').innerHTML = `
+                <h3>${t('guidance')}</h3>
+                <p>${def[`guidance_${currentLanguage}`]}</p>
+            `;
+
+            document.getElementById('modalExampleSection').innerHTML = `
+                <h3>${t('example')}</h3>
+                <code>${def.example}</code>
+            `;
+
+            if (field.value) {
+                const valueSection = document.getElementById('modalValueSection');
+                valueSection.innerHTML = `
+                    <h3>${t('summary')}</h3>
+                    <code>${field.value}</code>
+                `;
+                valueSection.style.display = 'block';
+            } else {
+                document.getElementById('modalValueSection').style.display = 'none';
+            }
+
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        document.addEventListener('click', (e) => {
+            const modal = document.getElementById('modal');
+            if (e.target === modal) {
+                closeModal();
+            }
+        });
+
+        updateUI();
+    </script>
+</body>
+</html>
